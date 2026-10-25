@@ -48,12 +48,6 @@ body {
 
 .logo-text span { color: #6fe39b; }
 
-.tagline {
-  margin: 4px 0 0;
-  color: #c5d1ca;
-  font-size: 0.95rem;
-}
-
 main {
   max-width: 760px;
   margin: 0 auto;
