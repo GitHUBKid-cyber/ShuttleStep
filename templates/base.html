@@ -5,10 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ShuttleStep{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo.svg') }}">
 </head>
 <body>
   <header class="site-header">
-    <a href="{{ url_for('index') }}" class="logo">Shuttle<span>Step</span></a>
+    <a href="{{ url_for('index') }}" class="logo">
+      <img src="{{ url_for('static', filename='logo.svg') }}" alt="">
+      <span class="logo-text">Shuttle<span>Step</span></span>
+    </a>
     <p class="tagline">Footwork feedback from your match videos</p>
     <nav class="nav">
       <a href="{{ url_for('index') }}">Analyze</a>

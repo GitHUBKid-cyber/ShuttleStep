@@ -28,13 +28,25 @@ body {
 }
 
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px 10px 10px;
+  background: #171c19;
+  border-radius: 22px;
   color: #fff;
-  font-size: 1.6rem;
-  font-weight: 800;
   text-decoration: none;
 }
 
-.logo span { color: #6fe39b; }
+.logo img { width: 52px; height: 52px; border-radius: 12px; }
+
+.logo-text {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.logo-text span { color: #6fe39b; }
 
 .tagline {
   margin: 4px 0 0;
