@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Your results · ShuttleStep{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Your footwork results</h1>
+  {% if stats.tracked_pct < 60 %}
+  <p class="error">We lost track of the player in {{ 100 - stats.tracked_pct }}% of the video, so these numbers are less reliable. Try a clip where the whole body stays in view.</p>
+  {% endif %}
+  <div class="stats">
+    <div class="stat"><span class="value">{{ stats.distance_m }} m</span><span class="label">Distance covered (est.)</span></div>
+    <div class="stat"><span class="value">{{ stats.avg_speed }} m/s</span><span class="label">Average moving speed</span></div>
+    <div class="stat"><span class="value">{{ stats.top_speed }} m/s</span><span class="label">Top speed</span></div>
+    <div class="stat"><span class="value">{{ stats.moving_pct }}%</span><span class="label">Time moving</span></div>
+    <div class="stat"><span class="value">{{ stats.lunges }}</span><span class="label">Lunges{% if stats.lunge_knee_angle %} (knee {{ stats.lunge_knee_angle|round|int }}°){% endif %}</span></div>
+    <div class="stat"><span class="value">{% if stats.recovery_s is not none %}{{ stats.recovery_s }} s{% else %}–{% endif %}</span><span class="label">Avg. recovery to base</span></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Coaching tips</h2>
+  <ul class="tips-list">
+    {% for kind, text in tips %}
+    <li class="tip {{ kind }}"><span class="tag">{{ "Strength" if kind == "good" else "Work on" }}</span>{{ text }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Where you spent your time</h2>
+  <div class="court-grid">
+    <figure>
+      <img src="{{ files['heatmap.png'] }}" alt="Heatmap of the player's position on court">
+      <figcaption class="hint">A bird's-eye view of the court, net at the top. The <strong>+</strong> is your base, the spot you kept returning to. Red areas are where you spent the most time.</figcaption>
+    </figure>
+    <div class="zones">
+      {% for zone in ["front", "middle", "back", "left", "right"] %}
+      <div class="zone">
+        <span class="zone-name">{{ zone|capitalize }}</span>
+        <span class="bar"><span style="width: {{ stats.zones[zone] }}%"></span></span>
+        <span class="zone-pct">{{ stats.zones[zone] }}%</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Speed through the clip</h2>
+  <img src="{{ files['speed.png'] }}" alt="Chart of foot speed over time">
+  <p class="hint">Peaks are fast movements; flat stretches are rests between rallies.</p>
+</section>
+
+<section class="card">
+  <h2>Skeleton replay</h2>
+  <video src="{{ files['replay.mp4'] }}" controls playsinline muted></video>
+  <p class="hint">{{ stats.tracked_pct }}% of frames tracked over {{ stats.duration_s }} s.</p>
+</section>
+
+<p class="center">
+  <a class="button" href="{{ url_for('index') }}">Analyze another video</a>
+  <a class="button secondary" href="{{ url_for('videos') }}">My videos</a>
+</p>
+{% endblock %}

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+venv/
+uploads/
+static/results/*
+!static/results/.gitkeep
+shuttlestep.db
+secret_key.txt
+client_secret*.json

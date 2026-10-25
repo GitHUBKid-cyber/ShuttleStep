@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ShuttleStep{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a href="{{ url_for('index') }}" class="logo">Shuttle<span>Step</span></a>
+    <p class="tagline">Footwork feedback from your match videos</p>
+    <nav class="nav">
+      <a href="{{ url_for('index') }}">Analyze</a>
+      <a href="{{ url_for('videos') }}">My videos</a>
+      {% if user %}
+        <span class="nav-user">
+          {% if user.picture %}<img src="{{ user.picture }}" alt="" referrerpolicy="no-referrer">{% endif %}
+          {{ user.name }}
+        </span>
+        <a href="{{ url_for('auth.logout') }}">Sign out</a>
+      {% elif google_enabled %}
+        <a class="google-button" href="{{ url_for('auth.login') }}">Sign in with Google</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>Pose tracking by MediaPipe. Stats are estimates from a single camera.</footer>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}My videos · ShuttleStep{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>My videos</h1>
+  {% if analyses %}
+  <ul class="video-list">
+    {% for item in analyses %}
+    <li class="video-item">
+      <a class="video-link" href="{{ url_for('results', result_id=item.id) }}">
+        <img src="{{ url_for('static', filename='results/' ~ item.id ~ '/thumb.jpg') }}" alt="">
+        <span class="video-info">
+          <span class="video-name">{{ item.video_name }}</span>
+          <span class="video-date">{{ item.created_at.replace('T', ' at ') }}</span>
+          <span class="video-stats">{{ item.distance_m }} m · top {{ item.top_speed }} m/s · {{ item.lunges }} lunges</span>
+        </span>
+      </a>
+      <form action="{{ url_for('delete_video', result_id=item.id) }}" method="post">
+        <button type="submit" class="delete-button" title="Delete this video">Delete</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No videos yet. Your analysed videos will appear here so you can watch them again.</p>
+  {% endif %}
+  <p><a class="button" href="{{ url_for('index') }}">Analyze a new video</a></p>
+</section>
+{% endblock %}

@@ -1,0 +1,24 @@
+# Copies the code to the Hugging Face Space every time main changes, so the live website stays up to date.
+# Needs the HF_TOKEN secret and the HF_SPACE variable (for example "yourname/shuttlestep") in the repo settings.
+name: Deploy to Hugging Face
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ vars.HF_SPACE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          user="${HF_SPACE%%/*}"
+          git push --force "https://${user}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" HEAD:main
