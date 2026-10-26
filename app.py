@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
 import uuid
 from datetime import timedelta
 
@@ -27,7 +28,6 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".webm"}
 
 
 def _secret_key():
-    """A random key that keeps sign-ins safe. Made once, then kept in secret_key.txt."""
     if not os.path.exists(SECRET_KEY_PATH):
         with open(SECRET_KEY_PATH, "w") as f:
             f.write(secrets.token_hex(32))
@@ -36,7 +36,7 @@ def _secret_key():
 
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024  # 300 MB upload limit
+app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024  
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
 app.secret_key = _secret_key()
 storage.setup()
@@ -48,9 +48,17 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/health")
+def health():
+    return {"status": "ok", "service": "ShuttleStep"}
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    started = time.monotonic()
+    print(f"[UPLOAD] Request received, content_length={request.content_length}", flush=True)
     video = request.files.get("video")
+    print(f"[UPLOAD] Multipart parsed after {time.monotonic() - started:.1f}s", flush=True)
     if not video or not video.filename:
         return render_template("index.html", error="Please choose a video first.")
     extension = os.path.splitext(video.filename)[1].lower()
@@ -70,24 +78,24 @@ def analyze():
     os.makedirs(result_dir)
     video_path = os.path.join(UPLOAD_DIR, result_id + extension)
     video.save(video_path)
-
-    # Analysis can take minutes on a small server, longer than a web page may stay loading.
-    # So it runs in the background while the browser shows a "still analyzing" page that refreshes itself.
+    print(f"[UPLOAD] Saved file after {time.monotonic() - started:.1f}s", flush=True)
     owner = auth.current_owner()
     _write_status(result_dir, {"state": "working", "owner": owner})
     job = threading.Thread(target=_run_analysis, args=(result_id, video_path, height_cm, video.filename, owner), daemon=True)
     job.start()
+    print(f"[UPLOAD] Background job started; redirecting after {time.monotonic() - started:.1f}s", flush=True)
     return redirect(url_for("results", result_id=result_id))
 
 
-# Only one video is analyzed at a time, so a small server doesn't run out of memory.
 analysis_lock = threading.Lock()
 
 
 def _run_analysis(result_id, video_path, height_cm, video_name, owner):
     result_dir = os.path.join(RESULTS_DIR, result_id)
     try:
+        print(f"[JOB {result_id}] Waiting for analysis slot", flush=True)
         with analysis_lock:
+            print(f"[JOB {result_id}] Tracking started", flush=True)
             tracking = tracker.track_video(video_path, os.path.join(result_dir, "replay.mp4"))
             stats, chart_data, tips = analysis.analyze(tracking, height_cm)
             charts.heatmap(chart_data["position_m"], os.path.join(result_dir, "heatmap.png"))
@@ -96,9 +104,12 @@ def _run_analysis(result_id, video_path, height_cm, video_name, owner):
         with open(os.path.join(result_dir, "summary.json"), "w") as f:
             json.dump({"height_cm": height_cm, "stats": stats, "tips": tips}, f)
         storage.save_analysis(result_id, owner, video_name, stats)
+        print(f"[JOB {result_id}] Analysis completed", flush=True)
     except ValueError as error:
+        print(f"[JOB {result_id}] Invalid video: {error}", flush=True)
         _write_status(result_dir, {"state": "error", "owner": owner, "error": str(error)})
     except Exception:
+        print(f"[JOB {result_id}] Unexpected analysis error", flush=True)
         app.logger.exception("Analysis failed for %s", result_id)
         _write_status(result_dir, {"state": "error", "owner": owner, "error": "Something went wrong while analyzing this video. Please try another clip."})
     finally:
@@ -140,7 +151,6 @@ def delete_video(result_id):
 
 
 def _analysis_progress(result_id):
-    """While a video is still being analyzed, show a page that checks back every few seconds."""
     status_path = os.path.join(RESULTS_DIR, result_id, "status.json")
     if not os.path.exists(status_path):
         abort(404)
@@ -154,7 +164,6 @@ def _analysis_progress(result_id):
 
 
 def _check_owner(result_id):
-    """Only the person who uploaded a video can see or delete its results."""
     row = storage.get_analysis(result_id)
     if row is None or row["owner"] != auth.current_owner():
         abort(404)
@@ -172,17 +181,16 @@ def too_large(_):
 
 
 def _local_network_address():
-    """The address other devices on the same Wi-Fi (like your phone) can use to reach this computer."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         try:
-            s.connect(("8.8.8.8", 80))  # picks the Wi-Fi connection; nothing is actually sent
+            s.connect(("8.8.8.8", 80))  
             return s.getsockname()[0]
         except OSError:
             return None
 
 
 if __name__ == "__main__":
-    port = 8000  # 5000 is taken by AirPlay on many Macs
+    port = 8000  
     print("\n  ShuttleStep is running!")
     print(f"  On this computer, open:  http://localhost:{port}")
     address = _local_network_address()
@@ -190,5 +198,4 @@ if __name__ == "__main__":
         print(f"  On your phone (same Wi-Fi), open:  http://{address}:{port}")
     print("  To stop it, close this window or press Ctrl+C.")
     print('  (You can ignore the red "development server" warning below.)\n')
-    # 0.0.0.0 lets other devices on your Wi-Fi reach the site, not just this computer.
     app.run(host="0.0.0.0", port=port)

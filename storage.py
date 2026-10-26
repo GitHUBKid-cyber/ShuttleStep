@@ -53,6 +53,5 @@ def delete_analysis(result_id):
 
 
 def move_analyses(from_owner, to_owner):
-    """Give videos analysed as a guest to the account the guest just signed in with."""
     with _connect() as db:
         db.execute("UPDATE analyses SET owner = ? WHERE owner = ?", (to_owner, from_owner))

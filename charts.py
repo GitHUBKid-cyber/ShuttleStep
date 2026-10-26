@@ -2,7 +2,7 @@
 
 import matplotlib
 
-matplotlib.use("Agg")  # draw to files, no screen needed
+matplotlib.use("Agg")  
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -15,8 +15,7 @@ GRID = "#e3e8e5"
 def heatmap(position_m, path):
     """Where the player spent their time, seen from above with the net at the top."""
     pos = position_m[~np.isnan(position_m[:, 0])]
-    x, y = pos[:, 0], -pos[:, 1]  # flip so the net is at the top
-    # A singles half court is about 5 m wide and 6.7 m deep, so nobody strays more than about 4 m from base.
+    x, y = pos[:, 0], -pos[:, 1]  
     reach = float(np.clip(np.percentile(np.abs(pos), 98) + 0.3, 2.0, 4.0))
 
     fig, ax = plt.subplots(figsize=(4.2, 4.6), dpi=150)
@@ -39,7 +38,6 @@ def heatmap(position_m, path):
 
 
 def speed_over_time(times, speed, path):
-    """Foot speed through the clip, so busy rallies and rests stand out."""
     fig, ax = plt.subplots(figsize=(5.2, 2.6), dpi=150)
     ax.fill_between(times, np.nan_to_num(speed), color=GREEN, alpha=0.25, linewidth=0)
     ax.plot(times, speed, color=GREEN, linewidth=1.4)

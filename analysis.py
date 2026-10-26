@@ -37,11 +37,6 @@ LUNGE_STANCE = 0.45  # feet apart, as a share of the player's height
 
 
 def analyze(tracking, height_cm):
-    """Work out the footwork stats for one tracked video.
-
-    tracking is the dict from tracker.track_video. Returns a dict of stats, the per-frame data the charts need,
-    and a list of feedback tips.
-    """
     landmarks = tracking["landmarks"]
     world = tracking["world"]
     times = tracking["times"]
@@ -58,19 +53,15 @@ def analyze(tracking, height_cm):
     if tracked.sum() < 10:
         raise ValueError("We couldn't find a player in this video. Make sure their whole body is in view.")
 
-    # How tall the player looks, in pixels. The head can leave the top of the frame when the player comes close,
-    # so the hip-to-feet length is used too, and the larger estimate wins.
+
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         from_nose = np.linalg.norm(feet - nose, axis=1) / NOSE_HEIGHT_RATIO
         from_nose[nose[:, 1] < 0.02 * height] = np.nan
         from_hips = np.linalg.norm(feet - hips, axis=1) / HIP_HEIGHT_RATIO
         body_px = np.fmax(from_nose, from_hips)
-    # Bending and lunging make the player look shorter, so use the tallest they looked in the last second or so.
     body_px = _rolling_percentile(body_px, times, window_s=1.5, q=90)
 
-    # Place the player on the court floor, in metres, using how a phone camera sees the world: the further away
-    # the player is, the smaller they look. depth is the distance from the camera; side is left/right of its centre.
     focal_px = (width / 2) / np.tan(np.radians(CAMERA_FOV_DEGREES / 2))
     depth = focal_px * height_m / body_px
     side = (feet[:, 0] - width / 2) * depth / focal_px
@@ -89,9 +80,6 @@ def analyze(tracking, height_cm):
     moving_time = float(np.nansum(np.where(moving, dt, 0)))
     duration = float(times[-1] - times[0]) or 1
 
-    # Positions in metres, with the base (the spot the player keeps returning to) at 0, 0.
-    # x is left/right as the camera sees it; y is towards the net (positive is further from the camera,
-    # because the camera stands behind the back line) — flipped here so negative y means towards the net.
     base = np.nanmedian(ground, axis=0)
     position_m = (ground - base) * [1, -1]
 
@@ -120,7 +108,6 @@ def analyze(tracking, height_cm):
 
 
 def feedback(stats):
-    """Turn the stats into short, plain-English tips. Each tip is (kind, text) where kind is 'good' or 'work'."""
     tips = []
 
     recovery = stats["recovery_s"]
@@ -174,7 +161,6 @@ def feedback(stats):
 
 
 def _fill_gaps(points, times):
-    """Fill short tracking gaps by drawing a straight line between the frames either side."""
     points = points.copy()
     found = ~np.isnan(points[:, 0])
     if found.sum() < 2:
@@ -188,7 +174,6 @@ def _fill_gaps(points, times):
 
 
 def _smooth(values, times, window_s=0.3):
-    """Average each value with its neighbours to remove small tracking wobbles. Empty frames stay empty."""
     if len(times) < 2:
         return values
     dt = np.median(np.diff(times))
@@ -209,13 +194,11 @@ def _rolling_percentile(values, times, window_s, q):
         window = values[max(0, i - half):i + half + 1]
         if np.any(~np.isnan(window)):
             out[i] = np.nanpercentile(window, q)
-    # Moments with no player nearby borrow the overall scale.
     out[np.isnan(out)] = np.nanpercentile(values, q)
     return out
 
 
 def _zone_shares(position_m):
-    """Share of time (in %) in the front/middle/back thirds and left/right halves of the area the player covers."""
     pos = position_m[~np.isnan(position_m[:, 0])]
     x, y = pos[:, 0], pos[:, 1]
     lo, hi = np.percentile(y, [2, 98])
@@ -226,7 +209,6 @@ def _zone_shares(position_m):
         "front": front.mean(),
         "middle": (~front & ~back).mean(),
         "back": back.mean(),
-        # Split left/right down the middle of the area covered, not at base, so a lopsided base shows up.
         "left": (x < np.mean(np.percentile(x, [2, 98]))).mean(),
         "right": (x >= np.mean(np.percentile(x, [2, 98]))).mean(),
     }
@@ -234,7 +216,6 @@ def _zone_shares(position_m):
 
 
 def _find_moves(position_m, times):
-    """Find each trip away from base, which way it went, and how long the player took to get back."""
     distance = np.linalg.norm(position_m, axis=1)
     moves = []
     i = 0
@@ -243,7 +224,6 @@ def _find_moves(position_m, times):
         if not distance[i] > MOVE_DISTANCE:
             i += 1
             continue
-        # Follow the move to its furthest point, then time the return to base.
         start = i
         while i < n and not distance[i] < RECOVERED_DISTANCE:
             i += 1
@@ -277,11 +257,9 @@ def _knee_angle(world, hip, knee, ankle):
 
 
 def _find_lunges(world, times, height_m):
-    """Find lunges: a deep bend in one knee while the feet are spread wide."""
     left = _knee_angle(world, LEFT_HIP, LEFT_KNEE, LEFT_ANKLE)
     right = _knee_angle(world, RIGHT_HIP, RIGHT_KNEE, RIGHT_ANKLE)
     knee = np.fmin(left, right)
-    # World points come out a little smaller than real life, so compare the stance with the model's own leg length.
     leg = np.nanmedian(np.linalg.norm(world[:, LEFT_HIP] - world[:, LEFT_ANKLE], axis=1))
     stance = np.linalg.norm(world[:, LEFT_ANKLE] - world[:, RIGHT_ANKLE], axis=1) / (leg / 0.53)
     in_lunge = (knee < LUNGE_KNEE_ANGLE) & (stance > LUNGE_STANCE)
@@ -295,14 +273,12 @@ def _find_lunges(world, times, height_m):
         start = i
         while i < len(in_lunge) and in_lunge[i]:
             i += 1
-        # Ignore one-frame blips.
         if times[i - 1] - times[start] >= 0.1 or i - start >= 2:
             lunges.append({"time": float(times[start]), "knee_angle": float(np.nanmin(knee[start:i]))})
     return lunges
 
 
 def _base_stance(world, position_m):
-    """How wide the feet are compared with the shoulders while the player is at base."""
     at_base = np.linalg.norm(position_m, axis=1) < RECOVERED_DISTANCE
     if at_base.sum() < 5:
         return None

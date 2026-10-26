@@ -11,9 +11,7 @@ from mediapipe.tasks.python import BaseOptions, vision
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "pose_landmarker_full.task")
 
-# Analysing every frame is slow and adds little, so we sample about this many frames per second.
 TARGET_FPS = 15
-# Frames wider than this are shrunk first, which keeps tracking fast on a small server.
 MAX_WIDTH = 960
 
 CONNECTIONS = [(c.start, c.end) for c in vision.PoseLandmarksConnections.POSE_LANDMARKS]
@@ -95,7 +93,6 @@ def _probe(video_path):
         raise ValueError("Could not open this video. Try an MP4 or MOV file.")
     height, width = frame.shape[:2]
     if width > MAX_WIDTH:
-        # Video encoders need even sizes.
         width, height = MAX_WIDTH, int(height * MAX_WIDTH / width) // 2 * 2
     return source_fps, width, height
 

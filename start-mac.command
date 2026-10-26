@@ -1,5 +1,3 @@
-#!/bin/bash
-# Double-click this file on a Mac to start ShuttleStep.
 cd "$(dirname "$0")"
 
 if ! python3 -c "import sys; sys.exit(sys.version_info < (3, 12))" 2>/dev/null; then
@@ -15,7 +13,6 @@ if [ ! -d venv ]; then
   ./venv/bin/pip install --upgrade pip
 fi
 
-# Install (or update) the add-ons whenever requirements.txt has changed since last time.
 if ! cmp -s requirements.txt venv/installed-requirements.txt; then
   ./venv/bin/pip install -r requirements.txt || { read -p "Setup failed. Press Enter to close."; exit 1; }
   cp requirements.txt venv/installed-requirements.txt
