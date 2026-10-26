@@ -6,6 +6,7 @@ import secrets
 import shutil
 import socket
 import subprocess
+import threading
 import uuid
 from datetime import timedelta
 
@@ -70,32 +71,54 @@ def analyze():
     video_path = os.path.join(UPLOAD_DIR, result_id + extension)
     video.save(video_path)
 
-    try:
-        tracking = tracker.track_video(video_path, os.path.join(result_dir, "replay.mp4"))
-        stats, chart_data, tips = analysis.analyze(tracking, height_cm)
-    except ValueError as error:
-        return render_template("index.html", error=str(error))
-    finally:
-        os.remove(video_path)
-
-    charts.heatmap(chart_data["position_m"], os.path.join(result_dir, "heatmap.png"))
-    charts.speed_over_time(chart_data["times"], chart_data["speed"], os.path.join(result_dir, "speed.png"))
-    _save_thumbnail(os.path.join(result_dir, "replay.mp4"), os.path.join(result_dir, "thumb.jpg"), stats["duration_s"])
-    with open(os.path.join(result_dir, "summary.json"), "w") as f:
-        json.dump({"height_cm": height_cm, "stats": stats, "tips": tips}, f)
-    storage.save_analysis(result_id, auth.current_owner(), video.filename, stats)
-
+    # Analysis can take minutes on a small server, longer than a web page may stay loading.
+    # So it runs in the background while the browser shows a "still analyzing" page that refreshes itself.
+    owner = auth.current_owner()
+    _write_status(result_dir, {"state": "working", "owner": owner})
+    job = threading.Thread(target=_run_analysis, args=(result_id, video_path, height_cm, video.filename, owner), daemon=True)
+    job.start()
     return redirect(url_for("results", result_id=result_id))
+
+
+# Only one video is analyzed at a time, so a small server doesn't run out of memory.
+analysis_lock = threading.Lock()
+
+
+def _run_analysis(result_id, video_path, height_cm, video_name, owner):
+    result_dir = os.path.join(RESULTS_DIR, result_id)
+    try:
+        with analysis_lock:
+            tracking = tracker.track_video(video_path, os.path.join(result_dir, "replay.mp4"))
+            stats, chart_data, tips = analysis.analyze(tracking, height_cm)
+            charts.heatmap(chart_data["position_m"], os.path.join(result_dir, "heatmap.png"))
+            charts.speed_over_time(chart_data["times"], chart_data["speed"], os.path.join(result_dir, "speed.png"))
+            _save_thumbnail(os.path.join(result_dir, "replay.mp4"), os.path.join(result_dir, "thumb.jpg"), stats["duration_s"])
+        with open(os.path.join(result_dir, "summary.json"), "w") as f:
+            json.dump({"height_cm": height_cm, "stats": stats, "tips": tips}, f)
+        storage.save_analysis(result_id, owner, video_name, stats)
+    except ValueError as error:
+        _write_status(result_dir, {"state": "error", "owner": owner, "error": str(error)})
+    except Exception:
+        app.logger.exception("Analysis failed for %s", result_id)
+        _write_status(result_dir, {"state": "error", "owner": owner, "error": "Something went wrong while analyzing this video. Please try another clip."})
+    finally:
+        if os.path.exists(video_path):
+            os.remove(video_path)
+
+
+def _write_status(result_dir, status):
+    with open(os.path.join(result_dir, "status.json"), "w") as f:
+        json.dump(status, f)
 
 
 @app.route("/results/<result_id>")
 def results(result_id):
     if not result_id.isalnum():
         abort(404)
-    _check_owner(result_id)
     summary_path = os.path.join(RESULTS_DIR, result_id, "summary.json")
     if not os.path.exists(summary_path):
-        abort(404)
+        return _analysis_progress(result_id)
+    _check_owner(result_id)
     with open(summary_path) as f:
         summary = json.load(f)
     files = {name: url_for("static", filename=f"results/{result_id}/{name}") for name in ("replay.mp4", "heatmap.png", "speed.png")}
@@ -114,6 +137,20 @@ def delete_video(result_id):
     storage.delete_analysis(result_id)
     shutil.rmtree(os.path.join(RESULTS_DIR, result_id), ignore_errors=True)
     return redirect(url_for("videos"))
+
+
+def _analysis_progress(result_id):
+    """While a video is still being analyzed, show a page that checks back every few seconds."""
+    status_path = os.path.join(RESULTS_DIR, result_id, "status.json")
+    if not os.path.exists(status_path):
+        abort(404)
+    with open(status_path) as f:
+        status = json.load(f)
+    if status["owner"] != auth.current_owner():
+        abort(404)
+    if status["state"] == "error":
+        return render_template("index.html", error=status["error"])
+    return render_template("analyzing.html")
 
 
 def _check_owner(result_id):
