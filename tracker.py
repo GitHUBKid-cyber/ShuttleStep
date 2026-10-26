@@ -28,13 +28,12 @@ def track_video(video_path, replay_path):
       times: seconds from the start of the video for each sampled frame
       fps, width, height: of the sampled video
     """
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise ValueError("Could not open this video. Try an MP4 or MOV file.")
-
-    source_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    source_fps, width, height = _probe(video_path)
     step = max(1, round(source_fps / TARGET_FPS))
     fps = source_fps / step
+    reader = _start_reader(video_path, step, width, height)
+    writer = _start_writer(replay_path, width, height, fps)
+    frame_size = width * height * 3
 
     options = vision.PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=MODEL_PATH),
@@ -43,26 +42,15 @@ def track_video(video_path, replay_path):
     )
 
     landmarks, world, times = [], [], []
-    writer = None
     frame_index = 0
     with vision.PoseLandmarker.create_from_options(options) as landmarker:
         while True:
-            # grab() moves to the next frame without decoding the picture, which is much faster for frames we skip.
-            if not cap.grab():
+            data = reader.stdout.read(frame_size)
+            if len(data) < frame_size:
                 break
-            if frame_index % step:
-                frame_index += 1
-                continue
-            ok, frame = cap.retrieve()
-            if not ok:
-                break
+            frame = np.frombuffer(data, np.uint8).reshape(height, width, 3).copy()
 
-            frame = _shrink(frame)
-            if writer is None:
-                height, width = frame.shape[:2]
-                writer = _start_writer(replay_path, width, height, fps)
-
-            timestamp_ms = int(frame_index * 1000 / source_fps)
+            timestamp_ms = int(frame_index * step * 1000 / source_fps)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = landmarker.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), timestamp_ms)
 
@@ -80,11 +68,12 @@ def track_video(video_path, replay_path):
             writer.stdin.write(frame.tobytes())
             frame_index += 1
 
-    cap.release()
-    if writer is None:
-        raise ValueError("This video has no frames we could read.")
+    reader.stdout.close()
+    reader.wait()
     writer.stdin.close()
     writer.wait()
+    if not landmarks:
+        raise ValueError("This video has no frames we could read.")
 
     return {
         "landmarks": np.array(landmarks),
@@ -96,14 +85,32 @@ def track_video(video_path, replay_path):
     }
 
 
-def _shrink(frame):
+def _probe(video_path):
+    """Read the frame rate and the (upright, shrunk) frame size from the video's first frame."""
+    cap = cv2.VideoCapture(video_path)
+    ok, frame = cap.read() if cap.isOpened() else (False, None)
+    source_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    cap.release()
+    if not ok:
+        raise ValueError("Could not open this video. Try an MP4 or MOV file.")
     height, width = frame.shape[:2]
-    if width <= MAX_WIDTH:
-        return frame
-    scale = MAX_WIDTH / width
-    # Video encoders need even sizes.
-    size = (MAX_WIDTH, int(height * scale) // 2 * 2)
-    return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
+    if width > MAX_WIDTH:
+        # Video encoders need even sizes.
+        width, height = MAX_WIDTH, int(height * MAX_WIDTH / width) // 2 * 2
+    return source_fps, width, height
+
+
+def _start_reader(path, step, width, height):
+    """Decode the video with ffmpeg, keeping every step-th frame at our size.
+
+    ffmpeg decodes on all processor cores, and runs alongside MediaPipe, so this is much faster than OpenCV.
+    """
+    command = [
+        imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-i", path,
+        "-vf", f"select=not(mod(n\\,{step})),scale={width}:{height}:flags=area", "-fps_mode", "passthrough",
+        "-f", "rawvideo", "-pix_fmt", "bgr24", "-",
+    ]
+    return subprocess.Popen(command, stdout=subprocess.PIPE)
 
 
 def _start_writer(path, width, height, fps):
