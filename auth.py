@@ -56,11 +56,16 @@ def login():
     if not google_enabled():
         return render_template("message.html", title="Google sign-in isn't set up",
                                text="Add a client_secret.json file from Google Cloud to turn on sign-in. You can keep using ShuttleStep as a guest.")
+    host = request.host.split(":")[0]
+    # A public Tailscale Funnel link (https://<name>.ts.net) reaches the laptop as plain http, so ask Google to come back over https.
+    if host.endswith(".ts.net"):
+        redirect_uri = url_for("auth.callback", _external=True, _scheme="https")
     # Google only allows sign-in back to "localhost" for sites running on a laptop, not to a Wi-Fi address like 192.168.x.x.
-    if request.host.split(":")[0] not in ("localhost", "127.0.0.1"):
+    elif host in ("localhost", "127.0.0.1"):
+        redirect_uri = url_for("auth.callback", _external=True).replace("127.0.0.1", "localhost")
+    else:
         return render_template("message.html", title="Sign in on your laptop",
                                text="Google sign-in only works on the laptop running ShuttleStep (at localhost:8000). On your phone you can keep using ShuttleStep as a guest.")
-    redirect_uri = url_for("auth.callback", _external=True).replace("127.0.0.1", "localhost")
     return oauth.google.authorize_redirect(redirect_uri)
 
 
